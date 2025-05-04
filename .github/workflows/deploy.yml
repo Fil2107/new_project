@@ -21,7 +21,7 @@ jobs:
       run: |
         ssh -o StrictHostKeyChecking=no ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} << 'EOF'
         # Переходим в директорию с ботом
-        cd /root/tgbot
+        cd /root/new_project
         git config --global --add safe.directory /root/tgbot
         git fetch
         git reset --hard origin/main
@@ -29,7 +29,7 @@ jobs:
         go mod tidy
         # Компилируем main.go (предполагается, что Go уже установлен на сервере)
         go build -o tgbot main.go
-        kill $(cat /root/tgbot/bot.pid) 2>/dev/null || true
+        kill $(cat /root/new_project/bot.pid) 2>/dev/null || true
         nohup ./tgbot > bot.log 2>&1 & echo $! >| bot.pid
         
         # Если нужно перезапустить сервис (пример для systemd)
