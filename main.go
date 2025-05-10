@@ -1,123 +1,104 @@
 package main
 
 import (
-    "encoding/json"
-    "fmt"
-    "log"
-    "os"
-    "strconv"
-    "strings"
+	"fmt"
+	"log"
+	"os"
+	"strconv"
+	"strings"
 
-    tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-var tasks []string
-
-func saveTasks() error {
-    data, err := json.Marshal(tasks)
-    if err != nil {
-        return err
-    }
-    return os.WriteFile("tasks.json", data, 0644)
-}
-
-func loadTasks() error {
-    data, err := os.ReadFile("tasks.json")
-    if err != nil {
-        if os.IsNotExist(err) {
-            return nil
-        }
-        return err
-    }
-    return json.Unmarshal(data, &tasks)
-}
+var tasks = make(map[int64][]string) // Хранилище задач (по chatID)
 
 func main() {
-    // Чтение токена из файла
-    tokenBytes, err := os.ReadFile("token.txt")
-    if err != nil {
-        log.Fatalf("Ошибка при чтении token.txt: %v", err)
-    }
-    botToken := strings.TrimSpace(string(tokenBytes))
+	// Чтение токена из файла
+	tokenBytes, err := os.ReadFile("token.txt")
+	if err != nil {
+		log.Fatalf("Ошибка при чтении token.txt: %v", err)
+	}
+	botToken := strings.TrimSpace(string(tokenBytes))
 
-    // Инициализация бота
-    bot, err := tgbotapi.NewBotAPI(botToken)
-    if err != nil {
-        log.Panicf("Ошибка при инициализации бота: %v", err)
-    }
+	// Инициализация бота
+	bot, err := tgbotapi.NewBotAPI(botToken)
+	if err != nil {
+		log.Panic(err)
+	}
 
-    log.Printf("Бот авторизован как %s", bot.Self.UserName)
+	log.Printf("Бот авторизован как %s", bot.Self.UserName)
 
-    // Загрузка задач из файла
-    err = loadTasks()
-    if err != nil {
-        log.Fatalf("Ошибка при загрузке задач: %v", err)
-    }
+	// Настройка получения обновлений
+	u := tgbotapi.NewUpdate(0)
+	u.Timeout = 60
+	updates := bot.GetUpdatesChan(u)
 
-    // Настройка получения обновлений
-    u := tgbotapi.NewUpdate(0)
-    u.Timeout = 60
-    updates := bot.GetUpdatesChan(u)
+	// Обработка сообщений
+	for update := range updates {
+		if update.Message == nil {
+			continue
+		}
 
-    // Обработка сообщений
-    for update := range updates {
-        if update.Message == nil {
-            continue
-        }
+		chatID := update.Message.Chat.ID
+		text := update.Message.Text
+		var reply string
 
-        log.Printf("Получено сообщение: %s", update.Message.Text)
+		switch {
+		case text == "/start":
+			reply = "Привет! Я бот для управления задачами. Используй команды:\n" +
+				"/add <задача> - добавить задачу\n" +
+				"/list - показать список задач\n" +
+				"/del <номер> - удалить задачу\n" +
+				"/help - показать справку"
+		
+		case text == "/help":
+			reply = "Доступные команды:\n" +
+				"/add <задача> - добавить задачу\n" +
+				"/list - показать список задач\n" +
+				"/del <номер> - удалить задачу\n" +
+				"/help - показать справку"
+		
+		case strings.HasPrefix(text, "/add"):
+			task := strings.TrimSpace(strings.TrimPrefix(text, "/add"))
+			if task == "" {
+				reply = "Пожалуйста, укажите задачу после команды /add"
+			} else {
+				tasks[chatID] = append(tasks[chatID], task)
+				reply = fmt.Sprintf("Задача добавлена: %s", task)
+			}
+		
+		case text == "/list":
+			if len(tasks[chatID]) == 0 {
+				reply = "Нет задач в списке"
+			} else {
+				reply = "Список задач:\n"
+				for i, task := range tasks[chatID] {
+					reply += fmt.Sprintf("%d. %s\n", i+1, task)
+				}
+			}
+		
+		case strings.HasPrefix(text, "/del"):
+			arg := strings.TrimSpace(strings.TrimPrefix(text, "/del"))
+			if arg == "" {
+				reply = "Пожалуйста, укажите номер задачи для удаления"
+			} else {
+				num, err := strconv.Atoi(arg)
+				if err != nil || num <= 0 {
+					reply = "Некорректный номер задачи"
+				} else if num > len(tasks[chatID]) {
+					reply = "Задачи с таким номером не существует"
+				} else {
+					deleted := tasks[chatID][num-1]
+					tasks[chatID] = append(tasks[chatID][:num-1], tasks[chatID][num:]...)
+					reply = fmt.Sprintf("Задача удалена: %s", deleted)
+				}
+			}
+		
+		default:
+			reply = "Неизвестная команда. Введите /help для списка команд"
+		}
 
-        // Обработка только команд
-        switch update.Message.Command() {
-        case "add":
-            args := update.Message.CommandArguments()
-            if args == "" {
-                sendMessage(bot, update.Message.Chat.ID, "Пожалуйста, укажите задачу.")
-            } else {
-                tasks = append(tasks, args)
-                err := saveTasks()
-                if err != nil {
-                    sendMessage(bot, update.Message.Chat.ID, fmt.Sprintf("Не удалось сохранить задачу: %v", err))
-                } else {
-                    sendMessage(bot, update.Message.Chat.ID, "Задача добавлена.")
-                }
-            }
-        case "remove":
-            args := update.Message.CommandArguments()
-            index, err := strconv.Atoi(args)
-            if err != nil || index < 0 || index >= len(tasks) {
-                sendMessage(bot, update.Message.Chat.ID, "Неверный индекс задачи.")
-            } else {
-                tasks = append(tasks[:index], tasks[index+1:]...)
-                err := saveTasks()
-                if err != nil {
-                    sendMessage(bot, update.Message.Chat.ID, fmt.Sprintf("Не удалось удалить задачу: %v", err))
-                } else {
-                    sendMessage(bot, update.Message.Chat.ID, "Задача удалена.")
-                }
-            }
-        case "list":
-            if len(tasks) == 0 {
-                sendMessage(bot, update.Message.Chat.ID, "Список задач пуст.")
-            } else {
-                var sb strings.Builder
-                sb.WriteString("Список задач:\n")
-                for i, task := range tasks {
-                    sb.WriteString(fmt.Sprintf("%d. %s\n", i, task))
-                }
-                sendMessage(bot, update.Message.Chat.ID, sb.String())
-            }
-        default:
-            // Игнорируем неизвестные команды
-            log.Printf("Неизвестная команда: %s", update.Message.Command())
-        }
-    }
-}
-
-func sendMessage(bot *tgbotapi.BotAPI, chatID int64, text string) {
-    msg := tgbotapi.NewMessage(chatID, text)
-    _, err := bot.Send(msg)
-    if err != nil {
-        log.Printf("Ошибка при отправке сообщения: %v", err)
-    }
+		msg := tgbotapi.NewMessage(chatID, reply)
+		bot.Send(msg)
+	}
 }
