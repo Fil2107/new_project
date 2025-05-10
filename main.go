@@ -2,8 +2,10 @@ package main
 
 import (
     "encoding/json"
+    "fmt"
     "log"
     "os"
+    "strconv"
     "strings"
 
     tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -41,7 +43,7 @@ func main() {
     // Инициализация бота
     bot, err := tgbotapi.NewBotAPI(botToken)
     if err != nil {
-        log.Panic(err)
+        log.Panicf("Ошибка при инициализации бота: %v", err)
     }
 
     log.Printf("Бот авторизован как %s", bot.Self.UserName)
@@ -74,7 +76,7 @@ func main() {
                 tasks = append(tasks, args)
                 err := saveTasks()
                 if err != nil {
-                    msg.Text = "Не удалось сохранить задачу."
+                    msg.Text = fmt.Sprintf("Не удалось сохранить задачу: %v", err)
                 } else {
                     msg.Text = "Задача добавлена."
                 }
@@ -88,7 +90,7 @@ func main() {
                 tasks = append(tasks[:index], tasks[index+1:]...)
                 err := saveTasks()
                 if err != nil {
-                    msg.Text = "Не удалось удалить задачу."
+                    msg.Text = fmt.Sprintf("Не удалось удалить задачу: %v", err)
                 } else {
                     msg.Text = "Задача удалена."
                 }
@@ -108,6 +110,9 @@ func main() {
             msg.Text = "Неизвестная команда. Используйте /add, /remove или /list."
         }
 
-        bot.Send(msg)
+        _, err = bot.Send(msg)
+        if err != nil {
+            log.Printf("Ошибка при отправке сообщения: %v", err)
+        }
     }
 }
