@@ -65,54 +65,59 @@ func main() {
             continue
         }
 
-        msg := tgbotapi.NewMessage(update.Message.Chat.ID, "")
+        log.Printf("Получено сообщение: %s", update.Message.Text)
 
+        // Обработка только команд
         switch update.Message.Command() {
         case "add":
             args := update.Message.CommandArguments()
             if args == "" {
-                msg.Text = "Пожалуйста, укажите задачу."
+                sendMessage(bot, update.Message.Chat.ID, "Пожалуйста, укажите задачу.")
             } else {
                 tasks = append(tasks, args)
                 err := saveTasks()
                 if err != nil {
-                    msg.Text = fmt.Sprintf("Не удалось сохранить задачу: %v", err)
+                    sendMessage(bot, update.Message.Chat.ID, fmt.Sprintf("Не удалось сохранить задачу: %v", err))
                 } else {
-                    msg.Text = "Задача добавлена."
+                    sendMessage(bot, update.Message.Chat.ID, "Задача добавлена.")
                 }
             }
         case "remove":
             args := update.Message.CommandArguments()
             index, err := strconv.Atoi(args)
             if err != nil || index < 0 || index >= len(tasks) {
-                msg.Text = "Неверный индекс задачи."
+                sendMessage(bot, update.Message.Chat.ID, "Неверный индекс задачи.")
             } else {
                 tasks = append(tasks[:index], tasks[index+1:]...)
                 err := saveTasks()
                 if err != nil {
-                    msg.Text = fmt.Sprintf("Не удалось удалить задачу: %v", err)
+                    sendMessage(bot, update.Message.Chat.ID, fmt.Sprintf("Не удалось удалить задачу: %v", err))
                 } else {
-                    msg.Text = "Задача удалена."
+                    sendMessage(bot, update.Message.Chat.ID, "Задача удалена.")
                 }
             }
         case "list":
             if len(tasks) == 0 {
-                msg.Text = "Список задач пуст."
+                sendMessage(bot, update.Message.Chat.ID, "Список задач пуст.")
             } else {
                 var sb strings.Builder
                 sb.WriteString("Список задач:\n")
                 for i, task := range tasks {
                     sb.WriteString(fmt.Sprintf("%d. %s\n", i, task))
                 }
-                msg.Text = sb.String()
+                sendMessage(bot, update.Message.Chat.ID, sb.String())
             }
         default:
-            msg.Text = "Неизвестная команда. Используйте /add, /remove или /list."
+            // Игнорируем неизвестные команды
+            log.Printf("Неизвестная команда: %s", update.Message.Command())
         }
+    }
+}
 
-        _, err = bot.Send(msg)
-        if err != nil {
-            log.Printf("Ошибка при отправке сообщения: %v", err)
-        }
+func sendMessage(bot *tgbotapi.BotAPI, chatID int64, text string) {
+    msg := tgbotapi.NewMessage(chatID, text)
+    _, err := bot.Send(msg)
+    if err != nil {
+        log.Printf("Ошибка при отправке сообщения: %v", err)
     }
 }
